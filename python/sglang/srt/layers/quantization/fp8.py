@@ -347,8 +347,33 @@ class Fp8LinearMethod(LinearMethodBase):
                 return
             else:
                 weight, weight_scale = layer.weight.data, layer.weight_scale_inv.data
-            layer.weight = Parameter(weight, requires_grad=False)
-            layer.weight_scale_inv = Parameter(weight_scale, requires_grad=False)
+            # layer.weight = torch.nn.Parameter(weight, requires_grad=False)
+            # layer.weight_scale_inv = torch.nn.Parameter(
+            #    weight_scale, requires_grad=False
+            # )
+            return
+
+        layer.weight = torch.nn.Parameter(layer.weight.data, requires_grad=False)
+
+        # If checkpoint not serialized fp8, quantize the weights.
+        if not self.quant_config.is_checkpoint_fp8_serialized:
+            if self.cutlass_fp8_supported or self.use_marlin:
+                # apply per-channel quantization default, as cutlass sgl-kernel and marlin only support per-channel scale
+                qweight, weight_scale = per_token_group_quant_fp8(
+                    layer.weight, layer.weight.shape[-1]
+                )
+                weight_scale = weight_scale.t().contiguous()
+            else:
+                # per-tensor quantization
+                qweight, weight_scale = input_to_float8(layer.weight)
+
+            # Update the layer with the new values.
+            layer.weight = Parameter(qweight.t(), requires_grad=False)
+            layer.weight_scale = Parameter(weight_scale, requires_grad=False)
+            layer.input_scale = None
+
+        # If checkpoint is fp8, handle that there are N scales for N
+        # shards in a fused module
         else:
             layer.weight = Parameter(layer.weight.data, requires_grad=False)
 
