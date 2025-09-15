@@ -9,6 +9,7 @@ from sglang.srt.layers.logits_processor import LogitsProcessorOutput
 from sglang.srt.layers.sampler import get_token_ids_logprobs, get_top_logprobs
 from sglang.srt.managers.schedule_batch import ScheduleBatch
 from sglang.srt.managers.scheduler import GenerationBatchResult
+from sglang.srt.managers.io_struct import UpdateWeightsFromTensorReqInput
 from sglang.srt.managers.tp_worker import TpModelWorker
 from sglang.srt.mem_cache.common import (
     alloc_paged_token_slots_extend,
@@ -20,6 +21,7 @@ from sglang.srt.model_executor.forward_batch_info import (
     ForwardBatch,
     ForwardMode,
 )
+from sglang.srt.utils.patch_torch import monkey_patch_torch_reductions
 from sglang.srt.server_args import ServerArgs
 from sglang.srt.speculative.draft_utils import DraftBackendFactory
 from sglang.srt.speculative.eagle_draft_cuda_graph_runner import (
@@ -48,6 +50,7 @@ from sglang.srt.speculative.spec_utils import (
     select_top_k_tokens,
 )
 from sglang.srt.utils import (
+    MultiprocessingSerializer,
     empty_context,
     get_available_gpu_memory,
     get_bool_env_var,
@@ -939,6 +942,25 @@ class EAGLEWorker(TpModelWorker):
         draft_input.topk_p, draft_input.topk_index = fast_topk(probs, self.topk, dim=-1)
         draft_input.hidden_states = logits_output.hidden_states
 
+    def update_weights_from_tensor(self, recv_req: UpdateWeightsFromTensorReqInput):
+
+        monkey_patch_torch_reductions()
+        named_tensors = MultiprocessingSerializer.deserialize(
+            recv_req.serialized_named_tensors[self.tp_rank]
+        )
+        success, message = self.model_runner.update_weights_from_tensor(
+            named_tensors=named_tensors,
+            load_format=recv_req.load_format,
+        )
+        if not success:
+            return success, message
+
+        success, message = self.target_worker.model_runner.update_weights_from_tensor(
+            named_tensors=named_tensors,
+            load_format=recv_req.load_format,
+        )
+
+        return success, message
 
 @torch.compile(dynamic=True)
 def get_last_loc_large_page_size_top_k_1(

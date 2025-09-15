@@ -337,6 +337,8 @@ class ServerArgs:
     speculative_accept_threshold_acc: float = 1.0
     speculative_token_map: Optional[str] = None
     speculative_attention_mode: str = "prefill"
+    speculative_enable_weights_update: bool = False
+
     # For ngram only
     speculative_ngram_min_match_window_size: int = 1
     speculative_ngram_max_match_window_size: int = 12
@@ -2443,6 +2445,12 @@ class ServerArgs:
             type=int,
             default=ServerArgs.speculative_ngram_capacity,
             help="The cache capacity for ngram speculative decoding.",
+        )
+        parser.add_argument(
+            "--speculative-enable-weights-update",
+            action="store_true",
+            default=ServerArgs.speculative_enable_weights_update,
+            help="Enable weights update in speculative decoding. Currently only support update_weights_from_tensor.",
         )
 
         # Expert parallelism
