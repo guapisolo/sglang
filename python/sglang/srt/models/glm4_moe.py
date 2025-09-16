@@ -664,7 +664,7 @@ class Glm4MoeDecoderLayer(DeepseekV2DecoderLayer):
             layer_scatter_modes=self.layer_scatter_modes,
             input_layernorm=self.input_layernorm,
             post_attention_layernorm=self.post_attention_layernorm,
-            allow_reduce_scatter=True,
+            allow_reduce_scatter=False,
         )
 
     def forward(
@@ -1078,6 +1078,5 @@ class Glm4MoeForCausalLM(DeepseekV2ForCausalLM):
                             param, "weight_loader", default_weight_loader
                         )
                         weight_loader(param, loaded_weight)
-
 
 EntryClass = [Glm4MoeForCausalLM]

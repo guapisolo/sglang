@@ -370,7 +370,7 @@ class EAGLEWorker(TpModelWorker):
         self.cuda_graph_runner = None
         self.cuda_graph_runner_for_draft_extend = None
 
-        if self.server_args.disable_cuda_graph:
+        if True or self.server_args.disable_cuda_graph:
             return
 
         # Capture draft
