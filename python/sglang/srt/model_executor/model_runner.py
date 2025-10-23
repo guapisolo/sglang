@@ -23,6 +23,7 @@ import socket
 import threading
 import time
 from collections import defaultdict
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
@@ -842,7 +843,7 @@ class ModelRunner:
         with self.memory_saver_adapter.region(
             GPU_MEMORY_TYPE_WEIGHTS,
             enable_cpu_backup=self.server_args.enable_weights_cpu_backup,
-        ):
+        ) if not self.is_draft_worker else nullcontext():
             self.model = get_model(
                 model_config=self.model_config,
                 load_config=self.load_config,
@@ -1824,6 +1825,7 @@ class ModelRunner:
                     enable_kvcache_transpose=False,
                     device=self.device,
                     mamba_pool=self.req_to_token_pool.mamba_pool,
+                    enable_memory_saver=self.server_args.enable_memory_saver,
                 )
             else:
                 self.token_to_kv_pool = MHATokenToKVPool(

@@ -807,6 +807,7 @@ class HybridLinearKVPool(KVCache):
         enable_kvcache_transpose: bool,
         device: str,
         mamba_pool: MambaPool,
+        enable_memory_saver: bool,
     ):
         self.size = size
         self.dtype = dtype
@@ -832,7 +833,7 @@ class HybridLinearKVPool(KVCache):
             head_dim=head_dim,
             layer_num=self.full_layer_nums,
             device=device,
-            enable_memory_saver=False,
+            enable_memory_saver=enable_memory_saver,
         )
         self.full_attention_layer_id_mapping = {
             id: i for i, id in enumerate(full_attention_layer_ids)
