@@ -645,7 +645,7 @@ def biased_grouped_topk_impl(
 ):
     assert hidden_states.shape[0] == gating_output.shape[0], "Number of tokens mismatch"
 
-    scores = gating_output.sigmoid()
+    scores = gating_output.float().sigmoid().to(gating_output.dtype)
     num_token = scores.shape[0]
     num_experts = scores.shape[1]
     scores_for_choice = scores.view(num_token, -1) + correction_bias.unsqueeze(0)
