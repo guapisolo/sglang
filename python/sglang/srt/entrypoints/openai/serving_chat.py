@@ -908,8 +908,14 @@ class OpenAIServingChat(OpenAIServingBase):
         for idx, ret_item in enumerate(ret):
             # Process logprobs
             choice_logprobs = None
+            input_token_ids = None
             if request.logprobs:
                 choice_logprobs = self._process_response_logprobs(ret_item)
+                input_token_logprobs = ret_item["meta_info"].get("input_token_logprobs")
+                if input_token_logprobs:
+                    input_token_ids = [
+                        token_id for _, token_id, _ in input_token_logprobs
+                    ]
 
             # Handle hidden states
             hidden_states = process_hidden_states_from_ret(ret_item, request)
@@ -965,6 +971,7 @@ class OpenAIServingChat(OpenAIServingBase):
                     tool_calls=tool_calls,
                     reasoning_content=reasoning_text if reasoning_text else None,
                 ),
+                input_token_ids=input_token_ids,
                 logprobs=choice_logprobs,
                 finish_reason=finish_reason["type"] if finish_reason else None,
                 matched_stop=(
@@ -1007,6 +1014,7 @@ class OpenAIServingChat(OpenAIServingBase):
         for token_idx, (token, logprob) in enumerate(
             zip(logprobs.tokens, logprobs.token_logprobs)
         ):
+            token_id = logprobs.token_ids[token_idx]
             token_bytes = list(token.encode("utf-8"))
             top_logprobs = []
             if logprobs.top_logprobs:
@@ -1027,6 +1035,7 @@ class OpenAIServingChat(OpenAIServingBase):
             token_logprobs.append(
                 ChatCompletionTokenLogprob(
                     token=token,
+                    token_id=token_id,
                     bytes=token_bytes,
                     logprob=logprob,
                     top_logprobs=top_logprobs,
