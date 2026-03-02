@@ -964,6 +964,13 @@ class OpenAIServingChat(OpenAIServingBase):
                     history_tool_calls_cnt,
                 )
 
+            # Extract prompt_token_ids if requested
+            choice_prompt_token_ids = (
+                ret_item.get("prompt_token_ids")
+                if request.return_prompt_token_ids
+                else None
+            )
+
             choice_data = ChatCompletionResponseChoice(
                 index=idx,
                 message=ChatMessage(
@@ -980,6 +987,7 @@ class OpenAIServingChat(OpenAIServingBase):
                     else None
                 ),
                 hidden_states=hidden_states,
+                prompt_token_ids=choice_prompt_token_ids,
             )
             choices.append(choice_data)
 
@@ -990,13 +998,6 @@ class OpenAIServingChat(OpenAIServingBase):
             enable_cache_report=self.tokenizer_manager.server_args.enable_cache_report,
         )
 
-        # Extract prompt_token_ids if requested
-        prompt_token_ids = (
-            first_ret.get("prompt_token_ids")
-            if request.return_prompt_token_ids
-            else None
-        )
-
         return ChatCompletionResponse(
             id=ret[0]["meta_info"]["id"],
             created=created,
@@ -1004,7 +1005,6 @@ class OpenAIServingChat(OpenAIServingBase):
             choices=choices,
             usage=usage,
             metadata={"weight_version": ret[0]["meta_info"]["weight_version"]},
-            prompt_token_ids=prompt_token_ids,
             sglext=response_sglext,
         )
 

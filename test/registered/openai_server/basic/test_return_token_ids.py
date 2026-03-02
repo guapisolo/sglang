@@ -127,25 +127,23 @@ class TestReturnTokenIdsProtocol(unittest.TestCase):
 
     # --- Response (non-streaming) ---
 
-    def test_response_omits_prompt_token_ids_when_none(self):
-        resp = ChatCompletionResponse(
-            id="test-id",
-            model="test",
-            choices=[],
-            usage=UsageInfo(prompt_tokens=5, completion_tokens=3, total_tokens=8),
+    def test_choice_omits_prompt_token_ids_when_none(self):
+        choice = ChatCompletionResponseChoice(
+            index=0,
+            message=ChatMessage(role="assistant", content="hi"),
+            finish_reason="stop",
         )
-        data = resp.model_dump()
+        data = choice.model_dump()
         self.assertNotIn("prompt_token_ids", data)
 
-    def test_response_includes_prompt_token_ids_when_set(self):
-        resp = ChatCompletionResponse(
-            id="test-id",
-            model="test",
-            choices=[],
-            usage=UsageInfo(prompt_tokens=5, completion_tokens=3, total_tokens=8),
+    def test_choice_includes_prompt_token_ids_when_set(self):
+        choice = ChatCompletionResponseChoice(
+            index=0,
+            message=ChatMessage(role="assistant", content="hi"),
+            finish_reason="stop",
             prompt_token_ids=[1, 2, 3],
         )
-        data = resp.model_dump()
+        data = choice.model_dump()
         self.assertIn("prompt_token_ids", data)
         self.assertEqual(data["prompt_token_ids"], [1, 2, 3])
 
@@ -187,16 +185,16 @@ class TestReturnTokenIdsProtocol(unittest.TestCase):
             index=0,
             message=ChatMessage(role="assistant", content="hello"),
             finish_reason="stop",
+            prompt_token_ids=MOCK_PROMPT_TOKEN_IDS,
         )
         resp = ChatCompletionResponse(
             id="test-id",
             model="test",
             choices=[choice],
             usage=UsageInfo(prompt_tokens=5, completion_tokens=3, total_tokens=8),
-            prompt_token_ids=MOCK_PROMPT_TOKEN_IDS,
         )
         data = json.loads(resp.model_dump_json())
-        self.assertEqual(data["prompt_token_ids"], MOCK_PROMPT_TOKEN_IDS)
+        self.assertEqual(data["choices"][0]["prompt_token_ids"], MOCK_PROMPT_TOKEN_IDS)
 
     def test_full_response_json_without_token_ids(self):
         choice = ChatCompletionResponseChoice(
@@ -211,7 +209,7 @@ class TestReturnTokenIdsProtocol(unittest.TestCase):
             usage=UsageInfo(prompt_tokens=5, completion_tokens=3, total_tokens=8),
         )
         data = json.loads(resp.model_dump_json())
-        self.assertNotIn("prompt_token_ids", data)
+        self.assertNotIn("prompt_token_ids", data["choices"][0])
 
 
 # ===========================================================================
@@ -395,7 +393,7 @@ class TestReturnTokenIdsResponseBuilding(unittest.TestCase):
         response = self.chat._build_chat_response(req, ret, created=0)
 
         self.assertIsInstance(response, ChatCompletionResponse)
-        self.assertEqual(response.prompt_token_ids, MOCK_PROMPT_TOKEN_IDS)
+        self.assertEqual(response.choices[0].prompt_token_ids, MOCK_PROMPT_TOKEN_IDS)
 
     def test_without_return_prompt_token_ids(self):
         req = ChatCompletionRequest(
@@ -405,10 +403,10 @@ class TestReturnTokenIdsResponseBuilding(unittest.TestCase):
         ret = [self._make_ret(include_prompt_token_ids=False)]
         response = self.chat._build_chat_response(req, ret, created=0)
 
-        self.assertIsNone(response.prompt_token_ids)
+        self.assertIsNone(response.choices[0].prompt_token_ids)
 
         data = json.loads(response.model_dump_json())
-        self.assertNotIn("prompt_token_ids", data)
+        self.assertNotIn("prompt_token_ids", data["choices"][0])
 
     def test_json_round_trip(self):
         req = ChatCompletionRequest(
@@ -420,7 +418,7 @@ class TestReturnTokenIdsResponseBuilding(unittest.TestCase):
         response = self.chat._build_chat_response(req, ret, created=0)
 
         data = json.loads(response.model_dump_json())
-        self.assertEqual(data["prompt_token_ids"], MOCK_PROMPT_TOKEN_IDS)
+        self.assertEqual(data["choices"][0]["prompt_token_ids"], MOCK_PROMPT_TOKEN_IDS)
 
 
 # ===========================================================================

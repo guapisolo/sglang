@@ -805,12 +805,15 @@ class ChatCompletionResponseChoice(BaseModel):
     ] = None
     matched_stop: Union[None, int, str] = None
     hidden_states: Optional[object] = None
+    prompt_token_ids: Optional[List[int]] = None
 
     @model_serializer(mode="wrap")
     def _serialize(self, handler):
         data = handler(self)
         if self.hidden_states is None:
             data.pop("hidden_states", None)
+        if self.prompt_token_ids is None:
+            data.pop("prompt_token_ids", None)
         return data
 
 
@@ -822,14 +825,11 @@ class ChatCompletionResponse(BaseModel):
     choices: List[ChatCompletionResponseChoice]
     usage: UsageInfo
     metadata: Optional[Dict[str, Any]] = None
-    prompt_token_ids: Optional[List[int]] = None
     sglext: Optional[SglExt] = None
 
     @model_serializer(mode="wrap")
     def _serialize(self, handler):
         data = handler(self)
-        if self.prompt_token_ids is None:
-            data.pop("prompt_token_ids", None)
         if self.sglext is None:
             data.pop("sglext", None)
         return data
