@@ -567,7 +567,7 @@ class ChatCompletionRequest(BaseModel):
     return_hidden_states: bool = False
     return_routed_experts: bool = False
     return_cached_tokens_details: bool = False
-    return_token_ids: bool = False
+    return_prompt_token_ids: bool = False
     reasoning_effort: Optional[Literal["low", "medium", "high"]] = Field(
         default="medium",
         description="Constrains effort on reasoning for reasoning models. "

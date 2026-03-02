@@ -1,17 +1,17 @@
 """
-Unit tests for the return_token_ids feature in ChatCompletion endpoint.
+Unit tests for the return_prompt_token_ids feature in ChatCompletion endpoint.
 
 Tests that:
-1. Protocol models correctly handle return_token_ids fields
-2. Request conversion passes return_token_ids flag through
-3. Non-streaming response includes prompt_token_ids and choice.token_ids
-4. Streaming response includes prompt_token_ids chunk
-5. Fields are omitted from JSON when return_token_ids is False (default)
+1. Protocol models correctly handle return_prompt_token_ids / prompt_token_ids fields
+2. ChatCompletionTokenLogprob includes token_id field
+3. Request conversion passes return_prompt_token_ids flag through
+4. Non-streaming response includes prompt_token_ids
+5. Fields are omitted from JSON when return_prompt_token_ids is False (default)
 
 Run with:
-    python -m pytest test/registered/openai_server/basic/test_return_token_ids.py -v
+    python -m pytest test/registered/openai_server/basic/test_return_prompt_token_ids.py -v
 or:
-    python test/registered/openai_server/basic/test_return_token_ids.py -v
+    python test/registered/openai_server/basic/test_return_prompt_token_ids.py -v
 """
 
 import json
@@ -60,7 +60,10 @@ from sglang.srt.entrypoints.openai.protocol import (
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatCompletionResponseChoice,
+    ChatCompletionTokenLogprob,
     ChatMessage,
+    ChoiceLogprobs,
+    TopLogprob,
     UsageInfo,
 )
 
@@ -103,7 +106,7 @@ MOCK_OUTPUT_TOKEN_IDS = [100, 200, 300]
 
 
 class TestReturnTokenIdsProtocol(unittest.TestCase):
-    """Test protocol model fields for return_token_ids."""
+    """Test protocol model fields for return_prompt_token_ids."""
 
     # --- Request ---
 
@@ -112,15 +115,15 @@ class TestReturnTokenIdsProtocol(unittest.TestCase):
             model="test",
             messages=[{"role": "user", "content": "Hi"}],
         )
-        self.assertFalse(req.return_token_ids)
+        self.assertFalse(req.return_prompt_token_ids)
 
     def test_request_explicit_true(self):
         req = ChatCompletionRequest(
             model="test",
             messages=[{"role": "user", "content": "Hi"}],
-            return_token_ids=True,
+            return_prompt_token_ids=True,
         )
-        self.assertTrue(req.return_token_ids)
+        self.assertTrue(req.return_prompt_token_ids)
 
     # --- Response (non-streaming) ---
 
@@ -146,36 +149,44 @@ class TestReturnTokenIdsProtocol(unittest.TestCase):
         self.assertIn("prompt_token_ids", data)
         self.assertEqual(data["prompt_token_ids"], [1, 2, 3])
 
-    # --- Choice ---
+    # --- ChatCompletionTokenLogprob ---
 
-    def test_choice_omits_token_ids_when_none(self):
+    def test_token_logprob_includes_token_id(self):
+        logprob = ChatCompletionTokenLogprob(
+            token="hello",
+            token_id=12345,
+            bytes=list(b"hello"),
+            logprob=-0.5,
+            top_logprobs=[],
+        )
+        data = logprob.model_dump()
+        self.assertEqual(data["token_id"], 12345)
+
+    def test_token_logprob_in_choice_logprobs(self):
+        """token_id should appear in serialized logprobs.content entries."""
+        logprob_entry = ChatCompletionTokenLogprob(
+            token="hi",
+            token_id=100,
+            bytes=list(b"hi"),
+            logprob=-1.0,
+            top_logprobs=[],
+        )
         choice = ChatCompletionResponseChoice(
             index=0,
-            message=ChatMessage(role="assistant", content="hello"),
+            message=ChatMessage(role="assistant", content="hi"),
+            logprobs=ChoiceLogprobs(content=[logprob_entry]),
             finish_reason="stop",
         )
         data = choice.model_dump()
-        self.assertNotIn("token_ids", data)
-
-    def test_choice_includes_token_ids_when_set(self):
-        choice = ChatCompletionResponseChoice(
-            index=0,
-            message=ChatMessage(role="assistant", content="hello"),
-            finish_reason="stop",
-            token_ids=[100, 200, 300],
-        )
-        data = choice.model_dump()
-        self.assertIn("token_ids", data)
-        self.assertEqual(data["token_ids"], [100, 200, 300])
+        self.assertEqual(data["logprobs"]["content"][0]["token_id"], 100)
 
     # --- Full JSON round-trip ---
 
-    def test_full_response_json_with_token_ids(self):
+    def test_full_response_json_with_prompt_token_ids(self):
         choice = ChatCompletionResponseChoice(
             index=0,
             message=ChatMessage(role="assistant", content="hello"),
             finish_reason="stop",
-            token_ids=MOCK_OUTPUT_TOKEN_IDS,
         )
         resp = ChatCompletionResponse(
             id="test-id",
@@ -185,9 +196,7 @@ class TestReturnTokenIdsProtocol(unittest.TestCase):
             prompt_token_ids=MOCK_PROMPT_TOKEN_IDS,
         )
         data = json.loads(resp.model_dump_json())
-
         self.assertEqual(data["prompt_token_ids"], MOCK_PROMPT_TOKEN_IDS)
-        self.assertEqual(data["choices"][0]["token_ids"], MOCK_OUTPUT_TOKEN_IDS)
 
     def test_full_response_json_without_token_ids(self):
         choice = ChatCompletionResponseChoice(
@@ -202,11 +211,7 @@ class TestReturnTokenIdsProtocol(unittest.TestCase):
             usage=UsageInfo(prompt_tokens=5, completion_tokens=3, total_tokens=8),
         )
         data = json.loads(resp.model_dump_json())
-
         self.assertNotIn("prompt_token_ids", data)
-        self.assertNotIn("token_ids", data["choices"][0])
-
-
 
 
 # ===========================================================================
@@ -216,24 +221,24 @@ class TestReturnTokenIdsProtocol(unittest.TestCase):
 
 @unittest.skipUnless(_HAS_IO_STRUCT, "io_struct import requires GPU deps")
 class TestReturnTokenIdsIOStruct(unittest.TestCase):
-    """Test GenerateReqInput return_token_ids field."""
+    """Test GenerateReqInput return_prompt_token_ids field."""
 
     def test_default_false(self):
         req = GenerateReqInput(text="hello")
-        self.assertFalse(req.return_token_ids)
+        self.assertFalse(req.return_prompt_token_ids)
 
     def test_explicit_true(self):
-        req = GenerateReqInput(text="hello", return_token_ids=True)
-        self.assertTrue(req.return_token_ids)
+        req = GenerateReqInput(text="hello", return_prompt_token_ids=True)
+        self.assertTrue(req.return_prompt_token_ids)
 
     def test_does_not_affect_logprob_fields(self):
         req = GenerateReqInput(
             text="hello",
-            return_token_ids=True,
+            return_prompt_token_ids=True,
             return_logprob=False,
             logprob_start_len=-1,
         )
-        self.assertTrue(req.return_token_ids)
+        self.assertTrue(req.return_prompt_token_ids)
         self.assertFalse(req.return_logprob)
         self.assertEqual(req.logprob_start_len, -1)
 
@@ -247,7 +252,7 @@ class TestReturnTokenIdsIOStruct(unittest.TestCase):
     _HAS_SERVING_CHAT, "OpenAIServingChat import requires GPU deps"
 )
 class TestReturnTokenIdsRequestConversion(unittest.TestCase):
-    """Test that return_token_ids flows through _convert_to_internal_request."""
+    """Test that return_prompt_token_ids flows through _convert_to_internal_request."""
 
     def setUp(self):
         from unittest.mock import Mock, patch
@@ -276,13 +281,13 @@ class TestReturnTokenIdsRequestConversion(unittest.TestCase):
 
         self.chat = OpenAIServingChat(tm, template_mgr)
 
-    def _convert(self, return_token_ids: bool):
+    def _convert(self, return_prompt_token_ids: bool):
         from unittest.mock import patch
 
         req = ChatCompletionRequest(
             model="x",
             messages=[{"role": "user", "content": "Hi"}],
-            return_token_ids=return_token_ids,
+            return_prompt_token_ids=return_prompt_token_ids,
         )
         with patch.object(self.chat, "_process_messages") as proc_mock:
             proc_mock.return_value = MessageProcessingResult(
@@ -292,19 +297,36 @@ class TestReturnTokenIdsRequestConversion(unittest.TestCase):
         return adapted
 
     def test_flag_passed_when_true(self):
-        adapted = self._convert(return_token_ids=True)
+        adapted = self._convert(return_prompt_token_ids=True)
         self.assertIsInstance(adapted, GenerateReqInput)
-        self.assertTrue(adapted.return_token_ids)
+        self.assertTrue(adapted.return_prompt_token_ids)
 
     def test_flag_passed_when_false(self):
-        adapted = self._convert(return_token_ids=False)
+        adapted = self._convert(return_prompt_token_ids=False)
         self.assertIsInstance(adapted, GenerateReqInput)
-        self.assertFalse(adapted.return_token_ids)
+        self.assertFalse(adapted.return_prompt_token_ids)
 
     def test_logprob_not_affected(self):
-        adapted = self._convert(return_token_ids=True)
+        adapted = self._convert(return_prompt_token_ids=True)
         self.assertFalse(adapted.return_logprob)
         self.assertEqual(adapted.logprob_start_len, -1)
+
+    def test_stream_with_return_prompt_token_ids_raises(self):
+        """return_prompt_token_ids=True + stream=True should raise ValueError."""
+        from unittest.mock import patch
+
+        req = ChatCompletionRequest(
+            model="x",
+            messages=[{"role": "user", "content": "Hi"}],
+            return_prompt_token_ids=True,
+            stream=True,
+        )
+        with patch.object(self.chat, "_process_messages") as proc_mock:
+            proc_mock.return_value = MessageProcessingResult(
+                "Test prompt", [1, 2, 3], None, None, [], ["</s>"], None,
+            )
+            with self.assertRaises(ValueError):
+                self.chat._convert_to_internal_request(req)
 
 
 # ===========================================================================
@@ -316,7 +338,7 @@ class TestReturnTokenIdsRequestConversion(unittest.TestCase):
     _HAS_SERVING_CHAT, "OpenAIServingChat import requires GPU deps"
 )
 class TestReturnTokenIdsResponseBuilding(unittest.TestCase):
-    """Test _build_chat_response includes token IDs when requested."""
+    """Test _build_chat_response includes prompt_token_ids when requested."""
 
     def setUp(self):
         from unittest.mock import Mock
@@ -363,20 +385,19 @@ class TestReturnTokenIdsResponseBuilding(unittest.TestCase):
             ret["prompt_token_ids"] = MOCK_PROMPT_TOKEN_IDS
         return ret
 
-    def test_with_return_token_ids(self):
+    def test_with_return_prompt_token_ids(self):
         req = ChatCompletionRequest(
             model="x",
             messages=[{"role": "user", "content": "Hi"}],
-            return_token_ids=True,
+            return_prompt_token_ids=True,
         )
         ret = [self._make_ret(include_prompt_token_ids=True)]
         response = self.chat._build_chat_response(req, ret, created=0)
 
         self.assertIsInstance(response, ChatCompletionResponse)
         self.assertEqual(response.prompt_token_ids, MOCK_PROMPT_TOKEN_IDS)
-        self.assertEqual(response.choices[0].token_ids, MOCK_OUTPUT_TOKEN_IDS)
 
-    def test_without_return_token_ids(self):
+    def test_without_return_prompt_token_ids(self):
         req = ChatCompletionRequest(
             model="x",
             messages=[{"role": "user", "content": "Hi"}],
@@ -385,24 +406,21 @@ class TestReturnTokenIdsResponseBuilding(unittest.TestCase):
         response = self.chat._build_chat_response(req, ret, created=0)
 
         self.assertIsNone(response.prompt_token_ids)
-        self.assertIsNone(response.choices[0].token_ids)
 
         data = json.loads(response.model_dump_json())
         self.assertNotIn("prompt_token_ids", data)
-        self.assertNotIn("token_ids", data["choices"][0])
 
     def test_json_round_trip(self):
         req = ChatCompletionRequest(
             model="x",
             messages=[{"role": "user", "content": "Hi"}],
-            return_token_ids=True,
+            return_prompt_token_ids=True,
         )
         ret = [self._make_ret(include_prompt_token_ids=True)]
         response = self.chat._build_chat_response(req, ret, created=0)
 
         data = json.loads(response.model_dump_json())
         self.assertEqual(data["prompt_token_ids"], MOCK_PROMPT_TOKEN_IDS)
-        self.assertEqual(data["choices"][0]["token_ids"], MOCK_OUTPUT_TOKEN_IDS)
 
 
 # ===========================================================================

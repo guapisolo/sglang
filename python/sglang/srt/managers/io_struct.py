@@ -266,8 +266,8 @@ class GenerateReqInput(BaseReq, APIServingTimingMixin):
     # Whether to return entropy
     return_entropy: bool = False
 
-    # Whether to return prompt and output token IDs without computing logprobs
-    return_token_ids: bool = False
+    # Whether to return prompt token IDs without computing logprobs
+    return_prompt_token_ids: bool = False
 
     # Propagates trace context via Engine.generate/async_generate
     external_trace_header: Optional[Dict] = None

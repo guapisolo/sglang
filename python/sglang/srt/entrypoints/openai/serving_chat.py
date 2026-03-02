@@ -251,10 +251,10 @@ class OpenAIServingChat(OpenAIServingBase):
             request.reasoning_effort = reasoning_effort
 
         """Convert OpenAI chat completion request to internal format"""
-        if request.return_token_ids and request.stream:
+        if request.return_prompt_token_ids and request.stream:
             raise ValueError(
-                "return_token_ids is not supported with streaming. "
-                "Please set stream=false when using return_token_ids=true."
+                "return_prompt_token_ids is not supported with streaming. "
+                "Please set stream=false when using return_prompt_token_ids=true."
             )
 
         is_multimodal = self.tokenizer_manager.model_config.is_multimodal
@@ -324,7 +324,7 @@ class OpenAIServingChat(OpenAIServingBase):
             image_max_dynamic_patch=img_max_dynamic_patch,
             video_max_dynamic_patch=vid_max_dynamic_patch,
             max_dynamic_patch=getattr(request, "max_dynamic_patch", None),
-            return_token_ids=request.return_token_ids,
+            return_prompt_token_ids=request.return_prompt_token_ids,
         )
 
         return adapted_request, request
@@ -993,7 +993,7 @@ class OpenAIServingChat(OpenAIServingBase):
         # Extract prompt_token_ids if requested
         prompt_token_ids = (
             first_ret.get("prompt_token_ids")
-            if request.return_token_ids
+            if request.return_prompt_token_ids
             else None
         )
 
