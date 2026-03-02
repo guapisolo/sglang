@@ -980,11 +980,6 @@ class OpenAIServingChat(OpenAIServingBase):
                     else None
                 ),
                 hidden_states=hidden_states,
-                token_ids=(
-                    ret_item.get("output_ids")
-                    if request.return_token_ids
-                    else None
-                ),
             )
             choices.append(choice_data)
 
@@ -1024,8 +1019,8 @@ class OpenAIServingChat(OpenAIServingBase):
         """
         token_logprobs = []
 
-        for token_idx, (token, logprob) in enumerate(
-            zip(logprobs.tokens, logprobs.token_logprobs)
+        for token_idx, (token, token_id, logprob) in enumerate(
+            zip(logprobs.tokens, logprobs.token_ids, logprobs.token_logprobs)
         ):
             token_bytes = list(token.encode("utf-8"))
             top_logprobs = []
@@ -1047,6 +1042,7 @@ class OpenAIServingChat(OpenAIServingBase):
             token_logprobs.append(
                 ChatCompletionTokenLogprob(
                     token=token,
+                    token_id=token_id,
                     bytes=token_bytes,
                     logprob=logprob,
                     top_logprobs=top_logprobs,
