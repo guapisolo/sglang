@@ -251,6 +251,12 @@ class OpenAIServingChat(OpenAIServingBase):
             request.reasoning_effort = reasoning_effort
 
         """Convert OpenAI chat completion request to internal format"""
+        if request.return_token_ids and request.stream:
+            raise ValueError(
+                "return_token_ids is not supported with streaming. "
+                "Please set stream=false when using return_token_ids=true."
+            )
+
         is_multimodal = self.tokenizer_manager.model_config.is_multimodal
 
         # Process messages and apply chat template
@@ -318,6 +324,7 @@ class OpenAIServingChat(OpenAIServingBase):
             image_max_dynamic_patch=img_max_dynamic_patch,
             video_max_dynamic_patch=vid_max_dynamic_patch,
             max_dynamic_patch=getattr(request, "max_dynamic_patch", None),
+            return_token_ids=request.return_token_ids,
         )
 
         return adapted_request, request
@@ -973,6 +980,11 @@ class OpenAIServingChat(OpenAIServingBase):
                     else None
                 ),
                 hidden_states=hidden_states,
+                token_ids=(
+                    ret_item.get("output_ids")
+                    if request.return_token_ids
+                    else None
+                ),
             )
             choices.append(choice_data)
 
@@ -983,6 +995,13 @@ class OpenAIServingChat(OpenAIServingBase):
             enable_cache_report=self.tokenizer_manager.server_args.enable_cache_report,
         )
 
+        # Extract prompt_token_ids if requested
+        prompt_token_ids = (
+            first_ret.get("prompt_token_ids")
+            if request.return_token_ids
+            else None
+        )
+
         return ChatCompletionResponse(
             id=ret[0]["meta_info"]["id"],
             created=created,
@@ -990,6 +1009,7 @@ class OpenAIServingChat(OpenAIServingBase):
             choices=choices,
             usage=usage,
             metadata={"weight_version": ret[0]["meta_info"]["weight_version"]},
+            prompt_token_ids=prompt_token_ids,
             sglext=response_sglext,
         )
 

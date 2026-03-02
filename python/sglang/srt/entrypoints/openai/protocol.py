@@ -565,6 +565,7 @@ class ChatCompletionRequest(BaseModel):
     return_hidden_states: bool = False
     return_routed_experts: bool = False
     return_cached_tokens_details: bool = False
+    return_token_ids: bool = False
     reasoning_effort: Optional[Literal["low", "medium", "high"]] = Field(
         default="medium",
         description="Constrains effort on reasoning for reasoning models. "
@@ -802,12 +803,15 @@ class ChatCompletionResponseChoice(BaseModel):
     ] = None
     matched_stop: Union[None, int, str] = None
     hidden_states: Optional[object] = None
+    token_ids: Optional[List[int]] = None
 
     @model_serializer(mode="wrap")
     def _serialize(self, handler):
         data = handler(self)
         if self.hidden_states is None:
             data.pop("hidden_states", None)
+        if self.token_ids is None:
+            data.pop("token_ids", None)
         return data
 
 
@@ -819,11 +823,14 @@ class ChatCompletionResponse(BaseModel):
     choices: List[ChatCompletionResponseChoice]
     usage: UsageInfo
     metadata: Optional[Dict[str, Any]] = None
+    prompt_token_ids: Optional[List[int]] = None
     sglext: Optional[SglExt] = None
 
     @model_serializer(mode="wrap")
     def _serialize(self, handler):
         data = handler(self)
+        if self.prompt_token_ids is None:
+            data.pop("prompt_token_ids", None)
         if self.sglext is None:
             data.pop("sglext", None)
         return data
