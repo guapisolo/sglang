@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
+from python.sglang.srt.entrypoints.openai.protocol import ChatCompletionMessageParam
 import time
 import uuid
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Optional, Union
@@ -381,6 +382,14 @@ class OpenAIServingChat(OpenAIServingBase):
         is_multimodal: bool,
     ) -> MessageProcessingResult:
         """Apply Jinja chat template"""
+        # Short-circuit: use pretokenized path if provided
+        if (
+            request.pretokenized_token_ids is not None
+            and request.pretokenized_num_message is not None
+            and request.pretokenized_num_message > 0
+        ):
+            return self._apply_pretokenized_template(request, tools)
+
         prompt = ""
         prompt_ids = []
         openai_compatible_messages = []
@@ -587,6 +596,104 @@ class OpenAIServingChat(OpenAIServingBase):
             video_data=video_data,
             audio_data=audio_data,
             modalities=modalities,
+            stop=stop,
+        )
+
+    def _apply_pretokenized_template(
+        self,
+        request: ChatCompletionRequest,
+        tools: Optional[List[Dict]],
+    ) -> MessageProcessingResult:
+        """Apply pretokenized template with incremental tokenization for tool messages."""
+        N = request.pretokenized_num_message
+        messages = request.messages
+
+        # FIXME
+        if self.tokenizer_manager.model_config.is_multimodal:
+            raise ValueError(
+                "Pretokenized token IDs input is not supported for multimodal models"
+            )
+
+        if N > len(messages):
+            raise ValueError(
+                f"pretokenized_num_message ({N}) > total messages ({len(messages)})"
+            )
+
+        if messages[N - 1].role != "assistant":
+            raise ValueError(
+                f"Message at index {N - 1} must be assistant, got {messages[N - 1].role}"
+            )
+
+        for i in range(N, len(messages)):
+            if messages[i].role != "tool":
+                raise ValueError(
+                    f"Message at index {i} must be tool, got {messages[i].role}"
+                )
+
+        all_msg_dicts = [msg.model_dump() for msg in messages]
+        prefix_msgs = all_msg_dicts[:N]
+
+        # Process tool_calls arguments: str -> dict (consistent with standard path)
+        for msg in all_msg_dicts:
+            if (
+                msg["role"] == "assistant"
+                and "tool_calls" in msg
+                and isinstance(msg["tool_calls"], list)
+            ):
+                for item in msg["tool_calls"]:
+                    if "arguments" in item["function"] and isinstance(
+                        item["function"]["arguments"], str
+                    ):
+                        item["function"]["arguments"] = orjson.loads(
+                            item["function"]["arguments"]
+                        )
+
+        chat_template_kwargs = request.chat_template_kwargs or {}
+
+        # Tokenize first N messages (no generation prompt)
+        prefix_ids = self.tokenizer_manager.tokenizer.apply_chat_template(
+            prefix_msgs,
+            tokenize=True,
+            add_generation_prompt=False,
+            tools=tools,
+            reasoning_effort=request.reasoning_effort,
+            return_dict=False,
+            **chat_template_kwargs,
+        )
+
+        # Tokenize all messages (with generation prompt)
+        full_ids = self.tokenizer_manager.tokenizer.apply_chat_template(
+            all_msg_dicts,
+            tokenize=True,
+            add_generation_prompt=True,
+            tools=tools,
+            reasoning_effort=request.reasoning_effort,
+            return_dict=False,
+            **chat_template_kwargs,
+        )
+
+        # Validate prefix match
+        if full_ids[: len(prefix_ids)] != prefix_ids:
+            raise ValueError(
+                "Prefix mismatch: tokenizing first N messages does not match "
+                "the prefix of tokenizing all messages. "
+                f"prefix_ids length={len(prefix_ids)}, full_ids length={len(full_ids)}"
+            )
+
+        incremental_ids = full_ids[len(prefix_ids) :]
+        prompt_ids = list(request.pretokenized_token_ids) + incremental_ids
+
+        # Decode prompt_ids to text for the prompt field
+        prompt = self.tokenizer_manager.tokenizer.decode(prompt_ids)
+
+        stop = request.stop
+        return MessageProcessingResult(
+            prompt=prompt,
+            prompt_ids=prompt_ids,
+            image_data=None,
+            audio_data=None,
+            video_data=None,
+            modalities=[],
             stop=stop,
         )
 
