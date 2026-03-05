@@ -213,6 +213,129 @@ def make_tool_call_messages_multi_tool_single_turn():
     ]
 
 
+def make_tool_call_messages_parallel_tools():
+    """sys, user, assistant(3 parallel tool_calls), tool, tool, tool"""
+    return [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Compare weather in Beijing, Shanghai, and Guangzhou"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": {"city": "Beijing"},
+                    },
+                },
+                {
+                    "id": "call_2",
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": {"city": "Shanghai"},
+                    },
+                },
+                {
+                    "id": "call_3",
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": {"city": "Guangzhou"},
+                    },
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "content": '{"temperature": 25, "condition": "sunny"}',
+            "tool_call_id": "call_1",
+        },
+        {
+            "role": "tool",
+            "content": '{"temperature": 30, "condition": "cloudy"}',
+            "tool_call_id": "call_2",
+        },
+        {
+            "role": "tool",
+            "content": '{"temperature": 35, "condition": "rainy"}',
+            "tool_call_id": "call_3",
+        },
+    ]
+
+
+def make_multi_user_tool_chain():
+    """sys, user1, ass(tool), tool1, ass, user2, ass(tool), tool2, ass(tool), tool3"""
+    return [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What's the weather in Beijing?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": {"city": "Beijing"},
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "content": '{"temperature": 25, "condition": "sunny"}',
+            "tool_call_id": "call_1",
+        },
+        {
+            "role": "assistant",
+            "content": "Beijing is 25C and sunny.",
+        },
+        {"role": "user", "content": "Now check Shanghai and Guangzhou"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_2",
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": {"city": "Shanghai"},
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "content": '{"temperature": 30, "condition": "cloudy"}',
+            "tool_call_id": "call_2",
+        },
+        {
+            "role": "assistant",
+            "content": "Shanghai is 30C. Let me check Guangzhou.",
+            "tool_calls": [
+                {
+                    "id": "call_3",
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": {"city": "Guangzhou"},
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "content": '{"temperature": 35, "condition": "rainy"}',
+            "tool_call_id": "call_3",
+        },
+    ]
+
+
 def make_simple_messages_no_tool():
     """sys, user, assistant (no tools)"""
     return [
@@ -445,6 +568,15 @@ class PretokenizedTemplateTestBase(unittest.TestCase):
             messages, pretokenized_num_message=3, tools=WEATHER_TOOLS
         )
 
+    # --- parallel tool calls (3 tools) ---
+
+    def test_parallel_tools_pretokenize_3(self):
+        """3 parallel tool_calls, pretokenize first 3 (sys+user+ass)"""
+        messages = make_tool_call_messages_parallel_tools()
+        self._assert_pretokenized_equals_standard(
+            messages, pretokenized_num_message=3, tools=WEATHER_TOOLS
+        )
+
     # --- long chain ---
 
     def test_long_chain_pretokenize_3(self):
@@ -466,6 +598,25 @@ class PretokenizedTemplateTestBase(unittest.TestCase):
         messages = make_tool_call_messages_long_chain()
         self._assert_pretokenized_equals_standard(
             messages, pretokenized_num_message=7, tools=WEATHER_TOOLS
+        )
+
+    # --- multi-user tool chain (user1 ... user2 ... with tool calls) ---
+
+    def test_multi_user_chain_pretokenize_7(self):
+        """Multi-user chain: pretokenize up to ass(tool_calls) after user2, add [tool2, ass, tool3]"""
+        messages = make_multi_user_tool_chain()
+        # messages: sys(0) user1(1) ass(2) tool1(3) ass(4) user2(5) ass(6) tool2(7) ass(8) tool3(9)
+        # N=7: prefix=[0..6], last=ass(6), new=[tool2, ass(tool_calls), tool3]
+        self._assert_pretokenized_equals_standard(
+            messages, pretokenized_num_message=7, tools=WEATHER_TOOLS
+        )
+
+    def test_multi_user_chain_pretokenize_9(self):
+        """Multi-user chain: pretokenize up to ass(tool_calls), add [tool3]"""
+        messages = make_multi_user_tool_chain()
+        # N=9: prefix=[0..8], last=ass(8), new=[tool3]
+        self._assert_pretokenized_equals_standard(
+            messages, pretokenized_num_message=9, tools=WEATHER_TOOLS
         )
 
     # --- edge case: N == len(messages), no incremental tool messages ---
