@@ -604,7 +604,31 @@ class OpenAIServingChat(OpenAIServingBase):
         request: ChatCompletionRequest,
         tools: Optional[List[Dict]],
     ) -> MessageProcessingResult:
-        """Apply pretokenized template with incremental tokenization for tool messages."""
+        """Apply pretokenized template with incremental tokenization for tool messages.
+
+        Supported input pattern (non-streaming, non-multimodal only):
+            messages[0..N-1] are pretokenized (token IDs provided via pretokenized_token_ids)
+            messages[N..end] are new tool responses to be incrementally tokenized
+
+        Constraints:
+            - messages[N-1] must be role="assistant" (the last pretokenized turn)
+            - messages[N..end] must all be role="tool" (new tool responses)
+            - No multimodal content allowed in any message
+
+        Example valid pattern:
+            messages = [system, user, assistant(tool_calls), tool, tool, ...]
+            pretokenized_num_message = 3  (system + user + assistant are pretokenized)
+            pretokenized_token_ids = [...]  (token IDs for the first 3 messages)
+
+        How it works:
+            1. Tokenize first N messages with apply_chat_template(add_generation_prompt=False)
+               to get prefix_ids
+            2. Tokenize ALL messages with apply_chat_template(add_generation_prompt=True)
+               to get full_ids
+            3. Verify prefix_ids matches full_ids[:len(prefix_ids)]
+            4. incremental_ids = full_ids[len(prefix_ids):]
+            5. Final prompt_ids = pretokenized_token_ids + incremental_ids
+        """
         N = request.pretokenized_num_message
         messages = request.messages
 
