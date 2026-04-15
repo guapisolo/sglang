@@ -356,6 +356,26 @@ pub struct ChatCompletionRequest {
     #[serde(default)]
     pub return_hidden_states: bool,
 
+    /// Return routed expert indices (SGLang extension, MoE models)
+    #[serde(default)]
+    pub return_routed_experts: bool,
+
+    /// Return cached token details in response (SGLang extension)
+    #[serde(default)]
+    pub return_cached_tokens_details: bool,
+
+    /// Return prompt token IDs in response (SGLang extension)
+    #[serde(default)]
+    pub return_prompt_token_ids: bool,
+
+    /// Return meta info in response (SGLang extension)
+    #[serde(default)]
+    pub return_meta_info: bool,
+
+    /// Pre-computed prompt token IDs: bypasses chat template tokenization (SGLang extension)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_ids: Option<Vec<u32>>,
+
     /// Random seed for sampling for deterministic outputs
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sampling_seed: Option<u64>,

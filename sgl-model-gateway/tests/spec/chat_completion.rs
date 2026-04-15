@@ -568,3 +568,75 @@ fn test_tool_choice_allowed_tools_one_invalid_among_valid() {
         err
     );
 }
+
+// SGLang extension fields serde round-trip tests
+
+#[test]
+fn test_sglang_extension_fields_roundtrip() {
+    let json_with_extensions = json!({
+        "model": "test-model",
+        "messages": [{"role": "user", "content": "hello"}],
+        "return_hidden_states": true,
+        "return_routed_experts": true,
+        "return_cached_tokens_details": true,
+        "return_prompt_token_ids": true,
+        "return_meta_info": true,
+        "input_ids": [1, 2, 3, 42, 100]
+    });
+
+    let req: ChatCompletionRequest =
+        serde_json::from_value(json_with_extensions).expect("should deserialize");
+    assert!(req.return_hidden_states);
+    assert!(req.return_routed_experts);
+    assert!(req.return_cached_tokens_details);
+    assert!(req.return_prompt_token_ids);
+    assert!(req.return_meta_info);
+    assert_eq!(req.input_ids, Some(vec![1, 2, 3, 42, 100]));
+
+    let serialized = serde_json::to_value(&req).expect("should serialize");
+    assert_eq!(serialized["return_hidden_states"], true);
+    assert_eq!(serialized["return_routed_experts"], true);
+    assert_eq!(serialized["return_cached_tokens_details"], true);
+    assert_eq!(serialized["return_prompt_token_ids"], true);
+    assert_eq!(serialized["return_meta_info"], true);
+    assert_eq!(
+        serialized["input_ids"].as_array().unwrap(),
+        &vec![json!(1), json!(2), json!(3), json!(42), json!(100)]
+    );
+}
+
+#[test]
+fn test_sglang_extension_fields_default_values() {
+    let json_minimal = json!({
+        "model": "test-model",
+        "messages": [{"role": "user", "content": "hello"}]
+    });
+
+    let req: ChatCompletionRequest =
+        serde_json::from_value(json_minimal).expect("should deserialize");
+    assert!(!req.return_hidden_states);
+    assert!(!req.return_routed_experts);
+    assert!(!req.return_cached_tokens_details);
+    assert!(!req.return_prompt_token_ids);
+    assert!(!req.return_meta_info);
+    assert!(req.input_ids.is_none());
+}
+
+#[test]
+fn test_sglang_input_ids_omitted_when_none() {
+    let req = ChatCompletionRequest {
+        model: "test-model".to_string(),
+        messages: vec![ChatMessage::User {
+            content: MessageContent::Text("hello".to_string()),
+            name: None,
+        }],
+        input_ids: None,
+        ..Default::default()
+    };
+
+    let serialized = serde_json::to_value(&req).expect("should serialize");
+    assert!(
+        serialized.get("input_ids").is_none(),
+        "input_ids should be omitted when None"
+    );
+}
