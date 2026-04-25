@@ -90,6 +90,12 @@ class SchedulerOutputProcessorMixin:
             req.time_stats.set_decode_prebuilt_finish_time()
             req.check_finished()
             if req.finished():
+                # In PD decode, a request can finish in the prebuilt phase
+                # without ever entering a real decode forward pass. Collect
+                # routed experts here before we release the KV cache so the
+                # response contract matches the normal decode-finished path.
+                if req.return_routed_experts:
+                    self.maybe_collect_routed_experts(req)
                 req.time_stats.set_quick_finish_time()
                 release_kv_cache(req, self.tree_cache)
 
