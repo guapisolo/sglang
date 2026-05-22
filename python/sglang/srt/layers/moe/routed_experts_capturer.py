@@ -1,6 +1,7 @@
 import dataclasses
 import logging
 from abc import ABC
+from contextlib import contextmanager
 from typing import Optional
 
 import numpy as np
@@ -26,10 +27,21 @@ logger = logging.getLogger(__name__)
 
 _GB = 1024 * 1024 * 1024
 _MB = 1024 * 1024
+_routed_experts_capture_suspend_depth = 0
 
 
 def get_tensor_size_bytes(t: torch.Tensor):
     return np.prod(t.shape) * t.dtype.itemsize
+
+
+@contextmanager
+def suspend_routed_experts_capture():
+    global _routed_experts_capture_suspend_depth
+    _routed_experts_capture_suspend_depth += 1
+    try:
+        yield
+    finally:
+        _routed_experts_capture_suspend_depth -= 1
 
 
 @dataclasses.dataclass
@@ -263,6 +275,8 @@ class _RoutedExpertsCapturerReal(RoutedExpertsCapturer):
         )
 
     def capture(self, layer_id: int, topk_ids: torch.Tensor):
+        if _routed_experts_capture_suspend_depth > 0:
+            return
         if get_moe_a2a_backend().is_deepep():
             local_topk_ids = topk_ids
             topk_ids = self.gather_buffer[

@@ -1177,7 +1177,17 @@ class SchedulerOutputProcessorMixin:
                 if req.return_routed_experts:
                     if routed_experts is None:
                         routed_experts = []
-                    routed_experts.append(req.routed_experts)
+                    experts = req.routed_experts
+                    if experts is not None:
+                        routed_end = max(
+                            0,
+                            len(req.origin_input_ids)
+                            + len(output_ids_)
+                            - 1
+                            - req.routed_experts_start_len,
+                        )
+                        experts = experts[:routed_end]
+                    routed_experts.append(experts)
 
                 if req.customized_info is not None:
                     for k, v in req.customized_info.items():

@@ -10,6 +10,9 @@ from sglang.srt.layers.dp_attention import (
     get_attention_dp_size,
     is_dp_attention_enabled,
 )
+from sglang.srt.layers.moe.routed_experts_capturer import (
+    suspend_routed_experts_capture,
+)
 
 if TYPE_CHECKING:
     from sglang.srt.server_args import ServerArgs
@@ -297,9 +300,13 @@ def speculative_moe_backend_context():
     """
     global MOE_RUNNER_BACKEND
     original_backend = MOE_RUNNER_BACKEND
+
     try:
-        MOE_RUNNER_BACKEND = get_speculative_moe_runner_backend()
-        yield
+        with suspend_routed_experts_capture():
+            # Draft routing is not replayed by clients and must not overwrite
+            # the target-model routed-experts cache.
+            MOE_RUNNER_BACKEND = get_speculative_moe_runner_backend()
+            yield
     finally:
         MOE_RUNNER_BACKEND = original_backend
 
