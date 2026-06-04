@@ -39,9 +39,7 @@ export const Nemotron3SuperDeployment = () => {
         { id: 'enabled', label: 'Enabled', default: false },
         { id: 'disabled', label: 'Disabled', default: true }
       ],
-      // trtllm_mha is Blackwell-only; on B200 it replaces the flashinfer default,
-      // whose per-step plan() host-sync breaks the spec-v2 overlap scheduler. H200
-      // defaults to fa3 (no such sync), so no override is needed there.
+      // On Blackwell, the flashinfer default breaks the spec-v2 overlap scheduler, so override to trtllm_mha
       commandRule: (value, state) => value === 'enabled' ? '--speculative-algorithm EAGLE \\\n  --speculative-num-steps 3 \\\n  --speculative-eagle-topk 1 \\\n  --speculative-num-draft-tokens 4 \\\n  --mamba-scheduler-strategy extra_buffer' + (state.hardware === 'b200' ? ' \\\n  --attention-backend trtllm_mha' : '') : null
     },
     kvcache: {
