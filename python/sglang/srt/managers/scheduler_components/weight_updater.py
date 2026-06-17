@@ -18,16 +18,18 @@ from sglang.srt.constants import (
 )
 from sglang.srt.disaggregation.utils import DisaggregationMode
 from sglang.srt.managers.io_struct import (
+    BeginWeightUpdateReqInput,
+    BeginWeightUpdateReqOutput,
     CheckWeightsReqInput,
     CheckWeightsReqOutput,
     DestroyWeightsUpdateGroupReqInput,
     DestroyWeightsUpdateGroupReqOutput,
+    EndWeightUpdateReqInput,
+    EndWeightUpdateReqOutput,
     GetWeightsByNameReqInput,
     GetWeightsByNameReqOutput,
     InitWeightsUpdateGroupReqInput,
     InitWeightsUpdateGroupReqOutput,
-    PostProcessWeightsReqInput,
-    PostProcessWeightsReqOutput,
     ReleaseMemoryOccupationReqInput,
     ReleaseMemoryOccupationReqOutput,
     ResumeMemoryOccupationReqInput,
@@ -86,6 +88,12 @@ class SchedulerWeightUpdaterManager:
     metrics_collector: Optional[Any] = None
     offload_tags: set = field(default_factory=set)
     stashed_model_static_state: Any = None
+    # Weight-update session state. A session is opened by begin_weight_update and
+    # closed by end_weight_update; update_weights_from_* assert it is open.
+    # _weight_update_loaded tracks whether model.load_weights() ran this session
+    # (P2P/RDMA bypasses it), so end_weight_update knows to run post_load_weights.
+    _weight_update_in_progress: bool = False
+    _weight_update_loaded: bool = False
 
     @contextmanager
     def _observe_weight_load(self, source: str) -> Iterator[None]:
@@ -140,6 +148,9 @@ class SchedulerWeightUpdaterManager:
         recv_req: UpdateWeightsFromDistributedReqInput,
     ) -> Tuple[bool, str]:
         """Update the online model parameter."""
+        assert (
+            self._weight_update_in_progress
+        ), "update_weights_from_distributed requires an open begin_weight_update session"
         with self._observe_weight_load("distributed"):
             if recv_req.disable_draft_model:
                 worker = self.tp_worker
@@ -147,6 +158,7 @@ class SchedulerWeightUpdaterManager:
                 worker = self.draft_worker or self.tp_worker
             success, message = worker.update_weights_from_distributed(recv_req)
             if success:
+                self._weight_update_loaded = True
                 self.flush_cache_after_weight_update(recv_req)
             else:
                 logger.error(message)
@@ -154,6 +166,9 @@ class SchedulerWeightUpdaterManager:
 
     def update_weights_from_tensor(self, recv_req: UpdateWeightsFromTensorReqInput):
         """Update the online model parameter from tensors."""
+        assert (
+            self._weight_update_in_progress
+        ), "update_weights_from_tensor requires an open begin_weight_update session"
         with self._observe_weight_load("tensor"):
             if recv_req.disable_draft_model:
                 worker = self.tp_worker
@@ -161,6 +176,7 @@ class SchedulerWeightUpdaterManager:
                 worker = self.draft_worker or self.tp_worker
             success, message = worker.update_weights_from_tensor(recv_req)
             if success:
+                self._weight_update_loaded = True
                 self.flush_cache_after_weight_update(recv_req)
             else:
                 logger.error(message)
@@ -185,10 +201,27 @@ class SchedulerWeightUpdaterManager:
         parameter = self.tp_worker.get_weights_by_name(recv_req)
         return GetWeightsByNameReqOutput(parameter)
 
-    def post_process_weights(self, recv_req: PostProcessWeightsReqInput):
-        """Optional post-processing for updated weights (e.g., Marlin conversion)."""
-        success, message = self.tp_worker.post_process_weights(recv_req)
-        return PostProcessWeightsReqOutput(success, message)
+    def begin_weight_update(self, recv_req: BeginWeightUpdateReqInput):
+        """Begin a new weight update session: restore packed weights to a loadable state."""
+        success, message = self.tp_worker.begin_weight_update()
+        self._weight_update_in_progress = True
+        self._weight_update_loaded = False
+        if self.tp_cpu_group is not None:
+            torch.distributed.barrier(group=self.tp_cpu_group)
+        return BeginWeightUpdateReqOutput(success, message)
+
+    def end_weight_update(self, recv_req: EndWeightUpdateReqInput):
+        """End the weight update session: optionally post_load_weights, then quant finalize."""
+        assert (
+            self._weight_update_in_progress
+        ), "end_weight_update called without begin_weight_update"
+        success, message = self.tp_worker.end_weight_update(
+            run_post_load=not self._weight_update_loaded
+        )
+        self._weight_update_in_progress = False
+        if self.tp_cpu_group is not None:
+            torch.distributed.barrier(group=self.tp_cpu_group)
+        return EndWeightUpdateReqOutput(success, message)
 
     def release_memory_occupation(self, recv_req: ReleaseMemoryOccupationReqInput):
         assert (
