@@ -237,6 +237,8 @@ class Qwen3MoeSparseMoeBlock(nn.Module):
         config: Qwen3MoeConfig,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
+        *,
+        is_nextn: bool = False,
     ):
         super().__init__()
         self.tp_size = get_moe_tensor_parallel_world_size()
@@ -259,6 +261,7 @@ class Qwen3MoeSparseMoeBlock(nn.Module):
             renormalize=norm_topk_prob,
             use_grouped_topk=False,
             layer_id=layer_id,
+            allow_routed_experts_capture=not is_nextn,
         )
 
         self.experts = get_moe_impl_class(quant_config)(
@@ -727,6 +730,7 @@ class Qwen3MoeDecoderLayer(nn.Module):
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
         alt_stream: Optional[torch.cuda.Stream] = None,
+        is_nextn: bool = False,
     ) -> None:
         super().__init__()
         self.config = config
@@ -766,7 +770,8 @@ class Qwen3MoeDecoderLayer(nn.Module):
         self.attn_tp_size = get_attention_tp_size()
         self.attn_tp_rank = get_attention_tp_rank()
 
-        # Qwen3MoE all layers are sparse and have no nextn now
+        # Qwen3MoE decoder layers are always sparse; MTP construction passes
+        # `is_nextn` through to opt the draft MoE TopK out of R3 capture.
         self.is_layer_sparse = True
         is_previous_layer_sparse = True
         is_next_layer_sparse = True
@@ -785,6 +790,7 @@ class Qwen3MoeDecoderLayer(nn.Module):
                 config=config,
                 quant_config=quant_config,
                 prefix=add_prefix("mlp", prefix),
+                is_nextn=is_nextn,
             )
         else:
             self.mlp = Qwen3MoeMLP(
@@ -923,8 +929,15 @@ class Qwen3MoeModel(Qwen2MoeModel):
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
         decoder_layer_type=Qwen3MoeDecoderLayer,
+        is_nextn: bool = False,
     ) -> None:
         alt_stream = torch.cuda.Stream() if _is_cuda else None
+        if is_nextn:
+            base_decoder_layer_type = decoder_layer_type
+
+            def decoder_layer_type(*args, **kwargs):
+                return base_decoder_layer_type(*args, **kwargs, is_nextn=True)
+
         super().__init__(
             config=config,
             quant_config=quant_config,
