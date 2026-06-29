@@ -28,7 +28,7 @@ from sglang.srt.managers.data_parallel_controller import (
 )
 from sglang.srt.managers.io_struct import GetLoadsReqOutput, WatchLoadUpdateReq
 
-register_cpu_ci(est_time=11, suite="base-a-test-cpu")
+register_cpu_ci(est_time=15, suite="base-a-test-cpu")
 
 
 _BASE_LOAD = GetLoadsReqOutput(
