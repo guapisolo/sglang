@@ -1708,6 +1708,8 @@ class ResumeMemoryOccupationReqOutput(BaseReq):
 @dataclass
 class CheckWeightsReqInput(BaseReq):
     action: str = "checksum"
+    selector: str = "all"
+    skip_list: Optional[List[str]] = None
 
 
 @dataclass

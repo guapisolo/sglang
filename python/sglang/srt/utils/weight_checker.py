@@ -54,14 +54,14 @@ class WeightChecker:
         self._model_runner = model_runner
         self._snapshot_tensors = None
 
-    def handle(self, action: str) -> Optional[Dict]:
-        logger.info(f"[WeightChecker] handle action={action}")
+    def handle(self, action: str, skip_list: Optional[list] = None) -> Optional[Dict]:
+        logger.info(f"[WeightChecker] handle action={action} skip_list={skip_list}")
         if action == "snapshot":
             return self._snapshot()
         elif action == "reset_tensors":
             return self._reset_tensors()
         elif action == "compare":
-            return self._compare()
+            return self._compare(skip_list=skip_list)
         elif action == "checksum":
             return self._compute_checksum()
         else:
@@ -82,7 +82,7 @@ class WeightChecker:
                 continue
             param.copy_(_random_like(param))
 
-    def _compare(self):
+    def _compare(self, skip_list: Optional[list] = None):
         assert self._snapshot_tensors is not None
 
         skip_compare_names = {
@@ -90,6 +90,15 @@ class WeightChecker:
             for name, param in self._model_state()
             if getattr(param, "_skip_weight_check", False)
         }
+        # Names containing any skip_list substring are excluded from the fatal
+        # comparison; their mismatches are downgraded to non-fatal info (e.g. a VLM
+        # vision tower that text RL never updates).
+        if skip_list:
+            skip_compare_names |= {
+                name
+                for name, _ in self._model_state()
+                if any(pat in name for pat in skip_list)
+            }
         _check_tensors(
             expect_tensors=_postprocess_tensors(
                 self._snapshot_tensors, skip_compare_names

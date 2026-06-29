@@ -268,12 +268,23 @@ class SchedulerWeightUpdaterManager:
 
     def check_weights(self, recv_req: CheckWeightsReqInput):
         try:
-            payload = self.tp_worker.model_runner.check_weights(action=recv_req.action)
+            if recv_req.selector not in ("all", "target"):
+                raise ValueError(
+                    f"unsupported check-weight-update selector={recv_req.selector!r}; "
+                    "expected 'all' or 'target'"
+                )
+            payload = self.tp_worker.model_runner.check_weights(
+                action=recv_req.action, skip_list=recv_req.skip_list
+            )
 
-            if self.draft_worker is not None:
+            # selector="target" checks only the target (main) model; "all" also checks the
+            # draft/MTP model, whose weights are only synced when MTP training is on.
+            if recv_req.selector == "all" and self.draft_worker is not None:
                 draft_runner = _get_draft_model_runner(self.draft_worker)
                 if draft_runner is not None:
-                    draft_payload = draft_runner.check_weights(action=recv_req.action)
+                    draft_payload = draft_runner.check_weights(
+                        action=recv_req.action, skip_list=recv_req.skip_list
+                    )
                     if payload is not None and draft_payload is not None:
                         payload = _merge_checksum_payloads(payload, draft_payload)
 
